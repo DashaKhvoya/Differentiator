@@ -18,6 +18,10 @@ Node* CopyTree(const Node* node) {
 }
 
 int SyntaxError(int error_place) {
+  for (int i = 0; i < error_place; ++i) {
+    fprintf(stderr, " ");
+  }
+  fprintf(stderr, "^\n");
   printf ("Syntax Error on a poistion = [%d]\n", error_place);
   return -1;
 }
@@ -25,19 +29,20 @@ int SyntaxError(int error_place) {
 Node* GetN(String* string) {
   Node* node = (Node*)calloc(1, sizeof(Node));
 
-  if (isdigit(string -> str[string -> pos])) {
+  if (isdigit(string -> str[string -> pos]) || string -> str[string -> pos] == '-') {
     node -> type = TYPE_CONST;
     int temp = 0;
     sscanf(string -> str + string -> pos, "%lg%n", &node -> key.dbl, &temp);
     string -> pos += temp;
   } else if (isalpha(string -> str[string -> pos])) {
     node -> type = TYPE_VAR;
-    node -> key.symb = string -> str[string -> pos];
+    node -> key.var = string -> str[string -> pos];
     string -> pos++;
   } else {
     SyntaxError(string -> pos);
     return nullptr;
   }
+
   return node;
 }
 
@@ -45,91 +50,68 @@ Node* GetP(String* string) {
   if (string -> str[string -> pos] == '(') {
     string -> pos++;
     Node* node = GetE(string);
+
     if (string -> str[string -> pos] != ')') {
       SyntaxError(string -> pos);
       return nullptr;
-    } else {
-      string -> pos++;
-      return node;
     }
-  } else {
-    return GetN(string);
+    string -> pos++;
+    return node;
   }
+
+  return GetN(string);
 }
 
-Node* GetD(String* string) {
+Node* GetPow(String* string) {
   Node* node = GetP(string);
+
   while(string -> str[string -> pos] == '^') {
     Node* node_1 = node;
     string -> pos++;
     Node* node_2 = GetP(string);
-    Node::node_type key = {.symb = '^'};
-    node = CreateNode(TYPE_OP, key, node_1, node_2);
+    node = CreateNode(TYPE_BIN_OP, UnionOp(OP_POW), node_1, node_2);
     node_1 -> parent = node;
     node_2 -> parent = node;
   }
+
   return node;
 }
 
-Node* GetS(String* string) {
-  if (string -> str[string -> pos] == 's') {
-    char* arr = (char*)calloc(5, sizeof(char));
-    arr[0] = 's';
-    string -> pos++;
-    for (size_t i = 1; isalpha(string -> str[string -> pos]) && i < 5; i++) {
-      arr[i] = string -> str[string -> pos];
-      string -> pos++;
-    }
+Node* GetUnOp(String* string) {
+  if (isalpha(string -> str[string -> pos]) && isalpha(string -> str[string -> pos + 1])) {
+    char* arr = (char*)calloc(MAX_COMMAND_LENGTH, sizeof(char));
+    sscanf(string -> str + string -> pos, "%[^()]s", arr);
+    string -> pos += strlen(arr);
 
-    if (strcmp(arr, "sin") == 0) {
-      Node* node_1 = GetD(string);
-      Node::node_type key = {.str = arr};
-      Node* node = CreateNode(TYPE_STR, key, node_1, nullptr);
-      node_1 -> parent = node;
-      return node;
-    } else {
-      SyntaxError(string -> pos);
-      return nullptr;
+    for (size_t i = FIRST_UN_OP; i < NUMB_OF_OP; i++) {
+      if (strcmp(arr, operations_names[i]) == 0) {
+        Node* node_1 = GetPow(string);
+        Node* node = CreateNode(TYPE_UN_OP, UnionOp(i), node_1, nullptr);
+        node_1 -> parent = node;
+        return node;
+      }
     }
-  } else {
-    return GetD(string);
+    SyntaxError(string -> pos);
+    return nullptr;
   }
-}
 
-Node* GetC(String* string) {
-  if (string -> str[string -> pos] == 'c') {
-    char* arr = (char*)calloc(5, sizeof(char));
-    arr[0] = 'c';
-    string -> pos++;
-    for (size_t i = 1; isalpha(string -> str[string -> pos]) && i < 5; i++) {
-      arr[i] = string -> str[string -> pos];
-      string -> pos++;
-    }
-
-    if (strcmp(arr, "cos") == 0) {
-      Node* node_1 = GetS(string);
-      Node::node_type key = {.str = arr};
-      Node* node = CreateNode(TYPE_STR, key, node_1, nullptr);
-      node_1 -> parent = node;
-      return node;
-    } else {
-      SyntaxError(string -> pos);
-      return nullptr;
-    }
-  } else {
-    return GetS(string);
-  }
+  return GetPow(string);
 }
 
 Node* GetT(String* string) {
-  Node* node = GetC(string);
+  Node* node = GetUnOp(string);
+
   while(string -> str[string -> pos] == '*' || string -> str[string -> pos] == '/') {
     char oper = string -> str[string -> pos];
     string -> pos++;
     Node* node_1 = node;
-    Node* node_2 = GetC(string);
-    Node::node_type key = {.symb = oper};
-    node = CreateNode(TYPE_OP, key, node_1, node_2);
+    Node* node_2 = GetUnOp(string);
+
+    if (oper == '*') {
+      node = CreateNode(TYPE_BIN_OP, UnionOp(OP_MUL), node_1, node_2);
+    } else {
+      node = CreateNode(TYPE_BIN_OP, UnionOp(OP_DIV), node_1, node_2);
+    }
     node_1 -> parent = node;
     node_2 -> parent = node;
   }
@@ -144,8 +126,12 @@ Node* GetE(String* string) {
     string -> pos++;
     Node* node_1 = node;
     Node* node_2 = GetT(string);
-    Node::node_type key = {.symb = oper};
-    node = CreateNode(TYPE_OP, key, node_1, node_2);
+
+    if (oper == '+') {
+      node = CreateNode(TYPE_BIN_OP, UnionOp(OP_ADD), node_1, node_2);
+    } else {
+      node = CreateNode(TYPE_BIN_OP, UnionOp(OP_SUB), node_1, node_2);
+    }
     node_1 -> parent = node;
     node_2 -> parent = node;
   }
@@ -159,6 +145,7 @@ Node* GetG(String* string) {
     SyntaxError(string -> pos);
     return nullptr;
   }
+
   return node;
 }
 
@@ -175,14 +162,14 @@ void DumpPrintSubtree(Node* node, FILE* graph_file) {
 
     if (node -> type == TYPE_CONST) {
       fprintf(graph_file, "\"%p\" [shape =\"record\", style=\"filled\", color =\"pink\", label =\"{%lg}\"]\n", node, node -> key.dbl);
-    } else if (node -> type == TYPE_OP || node -> type == TYPE_STR) {
-      if (node -> type == TYPE_OP) {
-        fprintf(graph_file, "\"%p\" [shape =\"record\", style=\"filled\", color =\"blue\", label =\"{%c}\"]\n", node, node -> key.symb);
+    } else if (node -> type == TYPE_BIN_OP || node -> type == TYPE_UN_OP) {
+      if (node -> type == TYPE_BIN_OP) {
+        fprintf(graph_file, "\"%p\" [shape =\"record\", style=\"filled\", color =\"blue\", label =\"{%s}\"]\n", node, operations_names[node -> key.op]);
       } else {
-        fprintf(graph_file, "\"%p\" [shape =\"record\", style=\"filled\", color =\"blue\", label =\"{%s}\"]\n", node, node -> key.str);
+        fprintf(graph_file, "\"%p\" [shape =\"record\", style=\"filled\", color =\"blue\", label =\"{%s}\"]\n", node, operations_names[node -> key.op]);
       }
     } else {
-      fprintf(graph_file, "\"%p\" [shape =\"record\", style=\"filled\", color =\"green\", label =\"{%c}\"]\n", node, node -> key.symb);
+      fprintf(graph_file, "\"%p\" [shape =\"record\", style=\"filled\", color =\"green\", label =\"{%c}\"]\n", node, node -> key.var);
     }
     if (node -> left != nullptr) {
       fprintf(graph_file, "\"%p\"->\"%p\"[color=\"blue\"];\n",  node, node -> left);
@@ -206,132 +193,160 @@ void DumpPrintTree(Tree* tree) {
   system("dot -Tpng graph.gv -o graph.png");
 }
 
-void DumpSubtree(Node* node, FILE* graph_file) {
-  assert(graph_file);
-
-  if (node != nullptr) {
-    DumpSubtree(node -> left, graph_file);
-    DumpSubtree(node -> right, graph_file);
-
-    if (node -> type == TYPE_CONST) {
-      fprintf(graph_file, "\"%p\" [shape =\"record\", style=\"filled\", color =\"pink\", label =\"{%lg}\"]\n", node, node -> key.dbl);
-    } else if (node -> type == TYPE_OP || node -> type == TYPE_STR) {
-      if (node -> type == TYPE_OP) {
-        fprintf(graph_file, "\"%p\" [shape =\"record\", style=\"filled\", color =\"blue\", label =\"{%c}\"]\n", node, node -> key.symb);
-      } else {
-        fprintf(graph_file, "\"%p\" [shape =\"record\", style=\"filled\", color =\"blue\", label =\"{%s}\"]\n", node, node -> key.str);
-      }
-    } else {
-      fprintf(graph_file, "\"%p\" [shape =\"record\", style=\"filled\", color =\"green\", label =\"{%c}\"]\n", node, node -> key.symb);
-    }
-    if (node -> left != nullptr) {
-      fprintf(graph_file, "\"%p\"->\"%p\"[color=\"blue\"];\n",  node, node -> left);
-      if (node -> right != nullptr) {
-        fprintf(graph_file, "\"%p\"->\"%p\"[color=\"blue\"];\n",  node, node -> right);
-      }
-    }
-  }
+void PrintInRound(Node* node, FILE* tex_file) {
+  fprintf(tex_file, "(");
+  PrintSubTex(node, tex_file);
+  fprintf(tex_file, ")");
 }
 
-void Dump(Node* node) {
-  assert(node);
-
-  FILE* graph_file = fopen("graph.gv", "w");
-
-  fprintf(graph_file, "digraph {\n");
-  DumpSubtree(node, graph_file);
-  fprintf(graph_file, "}\n");
-  fclose(graph_file);
-
-  system("dot -Tpng graph.gv -o graph.png");
+void PrintInBraces(Node* node, FILE* tex_file) {
+  fprintf(tex_file, "{");
+  PrintSubTex(node, tex_file);
+  fprintf(tex_file, "}");
 }
 
 void PrintSubTex(Node* node, FILE* tex_file) {
   assert(tex_file);
 
-  if (node != nullptr) {
-    if (node -> left != nullptr && node -> left -> left != nullptr) {
-      if (node -> key.symb == '/') {
-        fprintf(tex_file, "\\frac{");
-      }
+  if (node == nullptr) {
+    return;
+  }
 
-      if (node -> type == TYPE_STR) {
-        fprintf(tex_file, "\\%s(", node -> key.str);
-      }
+  switch (node -> type) {
+    case TYPE_VAR:
+      fprintf(tex_file, "%c", node -> key.var);
+      break;
 
-      fprintf(tex_file, "(");
-      PrintSubTex(node -> left, tex_file);
-      fprintf(tex_file, ")");
-      if (node -> key.symb == '/') {
-        fprintf(tex_file, "}");
-      }
-
-      if (node -> type == TYPE_STR) {
-        fprintf(tex_file, ")");
-      }
-
-    } else {
-      if (node -> key.symb == '/') {
-        fprintf(tex_file, "\\frac{");
-      }
-      if (node -> type == TYPE_STR) {
-        fprintf(tex_file, "\\%s(", node -> key.str);
-      }
-      PrintSubTex(node -> left, tex_file);
-      if (node -> key.symb == '/') {
-        fprintf(tex_file, "}");
-      }
-      if (node -> type == TYPE_STR) {
-        fprintf(tex_file, ")");
-      }
-    }
-
-    if (node -> type == TYPE_CONST) {
-      fprintf(tex_file, "%lg", node -> key.dbl);
-    }  else if (node -> type == TYPE_VAR) {
-      fprintf(tex_file, "%c", node -> key.symb);
-    } else if (node -> type == TYPE_OP) {
-      if (node  -> key.symb == '*') {
-        fprintf(tex_file, "\\cdot(");
-      } else if (node -> key.symb == '/') {
-        ;
-      } else if (node -> key.symb == '^') {
-        fprintf(tex_file, "^{");
+    case TYPE_CONST: {
+      if (node -> key.dbl < 0) {
+        fprintf(tex_file, "(%lg)", node -> key.dbl);
       } else {
-        fprintf(tex_file, "%c", node -> key.symb);
+        fprintf(tex_file, "%lg", node -> key.dbl);
       }
-    } else if (node -> type == TYPE_STR) {
-      ;
+      break;
     }
 
-    if (node -> right != nullptr && node -> right -> left != nullptr) {
-      if (node -> key.symb == '/') {
-        fprintf(tex_file, "{");
+    case TYPE_BIN_OP: {
+      switch (node -> key.op) {
+        case OP_ADD:
+          PrintSubTex(node -> left, tex_file);
+          fprintf(tex_file, "+");
+          PrintSubTex(node -> right, tex_file);
+          break;
+
+        case OP_SUB:
+          PrintSubTex(node -> left, tex_file);
+          fprintf(tex_file, "-");
+          PrintSubTex(node -> right, tex_file);
+          break;
+
+        case OP_MUL:
+          if (node -> left -> type == TYPE_BIN_OP && (node -> left -> key.op == OP_ADD || node -> left -> key.op == OP_SUB)) {
+            PrintInRound(node -> left, tex_file);
+          } else {
+            PrintSubTex(node -> left, tex_file);
+          }
+          fprintf(tex_file, "\\cdot ");
+          if (node -> right -> type == TYPE_BIN_OP && (node -> right -> key.op == OP_ADD || node -> right -> key.op == OP_SUB)) {
+            PrintInRound(node -> right, tex_file);
+          } else {
+            PrintSubTex(node -> right, tex_file);
+          }
+          break;
+
+        case OP_DIV:
+            fprintf(tex_file, "\\dfrac ");
+            PrintInBraces(node -> left, tex_file);
+            PrintInBraces(node -> right, tex_file);
+            break;
+
+        case OP_POW:
+            if (node -> left -> type == TYPE_CONST || node -> left -> type == TYPE_VAR) {
+              PrintSubTex(node -> left, tex_file);
+            } else {
+              PrintInRound(node -> left, tex_file);
+            }
+
+            fprintf(tex_file, "^");
+            PrintInBraces(node -> right, tex_file);
+            break;
       }
-      fprintf(tex_file, "(");
-      PrintSubTex(node -> right, tex_file);
-      fprintf(tex_file, ")");
-      if (node -> key.symb == '/') {
-        fprintf(tex_file, "}");
-      }
-      if (node -> key.symb == '*') {
-        fprintf(tex_file, ")");
-      }
-      if (node -> key.symb == '^') {
-        fprintf(tex_file, "}");
-      }
-    } else {
-      if (node -> key.symb == '/') {
-        fprintf(tex_file, "{");
-      }
-      PrintSubTex(node -> right, tex_file);
-      if (node -> key.symb == '/') {
-        fprintf(tex_file, "}");
-      }
-      if (node -> key.symb == '^') {
-        fprintf(tex_file, "}");
-      }
+      break;
     }
+
+    case TYPE_UN_OP: {
+      switch (node -> key.op) {
+        case OP_LN:
+          fprintf(tex_file, "\\ln ");
+          PrintInRound(node -> left, tex_file);
+          break;
+
+        case OP_EXP:
+          fprintf(tex_file, "e^");
+          PrintInBraces(node -> left, tex_file);
+          break;
+
+        case OP_SIN:
+          fprintf(tex_file, "\\sin ");
+          PrintInRound(node -> left, tex_file);
+          break;
+
+        case OP_COS:
+          fprintf(tex_file, "\\cos ");
+          PrintInRound(node -> left, tex_file);
+          break;
+
+        case OP_TAN:
+          fprintf(tex_file, "\\tan ");
+          PrintInRound(node -> left, tex_file);
+          break;
+
+        case OP_CTG:
+          fprintf(tex_file, "\\cot ");
+          PrintInRound(node -> left, tex_file);
+          break;
+
+        case OP_SQRT:
+          fprintf(tex_file, "\\sqrt ");
+          PrintInRound(node -> left, tex_file);
+          break;
+
+        case OP_ARCSIN:
+          fprintf(tex_file, "\\arcsin ");
+          PrintInRound(node -> left, tex_file);
+          break;
+
+        case OP_ARCCOS:
+          fprintf(tex_file, "\\arccos ");
+          PrintInRound(node -> left, tex_file);
+          break;
+
+        case OP_ARCTAN:
+          fprintf(tex_file, "\\arctan ");
+          PrintInRound(node -> left, tex_file);
+          break;
+
+        case OP_SH:
+          fprintf(tex_file, "\\sinh ");
+          PrintInRound(node -> left, tex_file);
+          break;
+
+        case OP_CH:
+          fprintf(tex_file, "\\cosh ");
+          PrintInRound(node -> left, tex_file);
+          break;
+
+        case OP_TH:
+          fprintf(tex_file, "\\tanh ");
+          PrintInRound(node -> left, tex_file);
+          break;
+      }
+      break;
+    }
+
+    default:
+      fprintf(stderr, "Unknown node type %lu", node -> type);
+      break;
   }
 }
 
@@ -341,6 +356,7 @@ void PrintTex(Tree* tree) {
   FILE* tex_file = fopen("equation.tex", "w");
 
   fprintf(tex_file, "\\documentclass{report}\n");
+  fprintf(tex_file, "\\usepackage{amsmath}\n");
   fprintf(tex_file, "\\begin{document}\n");
   fprintf(tex_file, "\\newpage\n");
   fprintf(tex_file, "$$");
@@ -357,13 +373,13 @@ Node::node_type UnionDouble(double key) {
   return data;
 }
 
-Node::node_type UnionStr(const char* key) {
-  Node::node_type data = {.str = key};
+Node::node_type UnionOp(int key) {
+  Node::node_type data = {.op = key};
   return data;
 }
 
 Node::node_type UnionChar(char key) {
-  Node::node_type data = {.symb = key};
+  Node::node_type data = {.var = key};
   return data;
 }
 
@@ -377,51 +393,128 @@ Node::node_type UnionChar(char key) {
 #define CONSTANT CreateNode(TYPE_CONST, UnionDouble(0), NULL, NULL)
 #define VAR CreateNode(TYPE_CONST, UnionDouble(1), NULL, NULL)
 #define MINUS CreateNode(TYPE_CONST, UnionDouble(-1), NULL, NULL)
-#define ADD(left, right) CreateNode(TYPE_OP, UnionChar('+'), left, right)
-#define SUB(left, right) CreateNode(TYPE_OP, UnionChar('-'), left, right)
-#define MUL(left, right) CreateNode(TYPE_OP, UnionChar('*'), left, right)
-#define DIV(left, right) CreateNode(TYPE_OP, UnionChar('/'), left, right)
-#define DEG(left, right) CreateNode(TYPE_OP, UnionChar('^'), left, right)
-#define COS(left) CreateNode(TYPE_STR, UnionStr("cos"), left, NULL)
-#define SIN(left) CreateNode(TYPE_STR, UnionStr("sin"), left, NULL)
+#define ADD(left, right) CreateNode(TYPE_BIN_OP, UnionOp(OP_ADD), left, right)
+#define SUB(left, right) CreateNode(TYPE_BIN_OP, UnionOp(OP_SUB), left, right)
+#define MUL(left, right) CreateNode(TYPE_BIN_OP, UnionOp(OP_MUL), left, right)
+#define DIV(left, right) CreateNode(TYPE_BIN_OP, UnionOp(OP_DIV), left, right)
+#define DEG(left, right) CreateNode(TYPE_BIN_OP, UnionOp(OP_POW), left, right)
+#define COS(left) CreateNode(TYPE_UN_OP, UnionOp(OP_COS), left, NULL)
+#define SIN(left) CreateNode(TYPE_UN_OP, UnionOp(OP_SIN), left, NULL)
+#define CH(left) CreateNode(TYPE_UN_OP, UnionOp(OP_CH), left, NULL)
+#define SH(left) CreateNode(TYPE_UN_OP, UnionOp(OP_SH), left, NULL)
+#define SQRT(left) CreateNode(TYPE_UN_OP, UnionOp(OP_SQRT), left, NULL)
+#define LN(left) CreateNode(TYPE_UN_OP, UnionOp(OP_LN), left, NULL)
+#define EXP(left) CreateNode(TYPE_UN_OP, UnionOp(OP_EXP), left, NULL)
+
+Node* SwitchBinOp(Node* my_node) {
+  assert(my_node);
+
+  switch (my_node -> key.op) {
+    case OP_ADD:
+      return ADD(dL, dR);
+
+    case OP_SUB:
+      return SUB(dL, dR);
+
+    case OP_MUL:
+      return ADD(MUL(dL, cR), MUL(cL, dR));
+
+    case OP_DIV:
+      return DIV(SUB(MUL(dL, cR), MUL(cL, dR)), DEG(cR, SQUARE));
+
+    case OP_POW:
+    {  bool IsVarLeft = IsVar(L);
+      bool IsVarRight = IsVar(R);
+
+      if (IsVarLeft && IsVarRight) {
+        return Diff(EXP(MUL(cR, LN(cL))));
+      }
+      if (IsVarLeft) {
+        return MUL(MUL(cR, DEG(cL, SUB(cR, VAR))), dL);
+      }
+
+      return MUL(MUL(DEG(cL, cR), LN(cL)), dR);
+    }
+
+    default:
+      printf("Error: unknown binary operation, line %d\n", __LINE__);
+      return nullptr;
+  }
+}
+
+Node* SwitchUnOp(Node* my_node) {
+  assert(my_node);
+
+  switch(my_node -> key.op) {
+    case OP_SIN:
+      return MUL(COS(cL), dL);
+
+    case OP_COS:
+      return MUL(MUL(SIN(cL), dL), MINUS);
+
+    case OP_TAN:
+      return MUL(DIV(VAR, DEG(COS(cL), SQUARE)), dL);
+
+    case OP_CTG:
+      return MUL(DIV(MINUS, DEG(SIN(cL), SQUARE)), dL);
+
+    case OP_SQRT:
+      return MUL(DIV(VAR, MUL(SQUARE, SQRT(cL))), dL);
+
+    case OP_LN:
+      return MUL(DIV(VAR, cL), dL);
+
+    case OP_EXP:
+      return MUL(CopyTree(my_node), dL);
+
+    case OP_ARCSIN:
+      return MUL(DIV(VAR, SQRT(SUB(VAR, DEG(cL, SQUARE)))), dL);
+
+    case OP_ARCCOS:
+      return MUL(DIV(MINUS, SQRT(SUB(VAR, DEG(cL, SQUARE)))), dL);
+
+    case OP_ARCTAN:
+      return MUL(DIV(VAR, ADD(VAR, DEG(cL, SQUARE))), dL);
+
+    case OP_SH:
+      return MUL(CH(cL), dL);
+
+    case OP_CH:
+      return MUL(SH(cL), dL);
+
+    case OP_TH:
+      return MUL(DIV(VAR, DEG(CH(cL), SQUARE)), dL);
+    default:
+      printf("Error: unknown unary operation, line %d\n", __LINE__);
+      return nullptr;
+  }
+}
 
 Node* Diff(Node* my_node) {
   Node* node = nullptr;
   if (my_node != nullptr) {
-    switch(my_node -> type) {
-      case TYPE_CONST: node = CONSTANT;
-                       break;
-      case   TYPE_VAR: node = VAR;
-                       break;
-      case    TYPE_OP: switch(my_node -> key.symb) {
-        case '+': node = ADD(dL, dR);
-                  break;
-        case '-': node = SUB(dL, dR);
-                  break;
-        case '*': node = ADD(MUL(dL, cR), MUL(cL, dR));
-                  break;
-        case '/': node = DIV(SUB(MUL(dL, cR), MUL(cL, dR)), DEG(cR, SQUARE));
-                  break;
-        case '^': node = MUL(cR, DEG(cL, SUB(cR, VAR)));
-                  break;
-      }
-                  break;
-      case TYPE_STR: switch(my_node -> key.str[0]) {
-        case 's': node = COS(cL);
-                  break;
-        case 'c': node = MUL(MINUS, SIN(cL));
-                  break;
-      }
-                  break;
-    }
+    switch (my_node -> type) {
+      case TYPE_CONST:
+        node = CONSTANT;
+        break;
 
-    if (my_node -> left != nullptr && my_node -> left -> type != TYPE_CONST && my_node -> type != TYPE_OP) {
-      node = MUL(Diff(my_node -> left), node);
-    }
-    if (my_node -> right != nullptr && my_node -> right -> type != TYPE_CONST && my_node -> type != TYPE_OP) {
-      node = MUL(Diff(my_node -> right), node);
+      case TYPE_VAR:
+        node = VAR;
+        break;
+
+      case TYPE_BIN_OP:
+        node = SwitchBinOp(my_node);
+        break;
+
+      case TYPE_UN_OP:
+        node = SwitchUnOp(my_node);
+        break;
     }
   }
+
+  TexDiffBefore(my_node);
+  TexDiffAfter(node);
+
   return node;
 }
 
@@ -442,36 +535,39 @@ Node* Diff(Node* my_node) {
 #undef DEG
 #undef COS
 #undef SIN
+#undef SQRT
+#undef LN
+#undef EXP
+
+void Update(Node* node, Node* node_1, Node* node_2) {
+  node -> type = node_1 -> type;
+  node -> key = node_1 -> key;
+  node -> right = node_1 -> right;
+  node -> left = node_1 -> left;
+  node_1 -> parent = nullptr;
+  node_2 -> parent = nullptr;
+  node_1 -> left = nullptr;
+  node_1 -> right = nullptr;
+
+  free(node_1);
+  free(node_2);
+}
 
 void UpdateNode(Node* left, Node* right, Node* node) {
-  if (right -> key.dbl == 0 || right -> key.dbl == 1) {
-    node -> type = node -> left -> type;
-    node -> key = node -> left -> key;
-    node -> right = node -> left -> right;
-    node -> left = node -> left -> left;
-    left -> parent = nullptr;
-    right -> parent = nullptr;
-    left -> left = nullptr;
-    left -> right = nullptr;
+  assert(node);
+  assert(left);
+  assert(right);
 
-    free(left);
-    free(right);
-  } else if (node -> key.symb == '-') {
+  TexSimplifyBefore(node);
+  if (right -> key.dbl == 0 || right -> key.dbl == 1) {
+    Update(node, left, right);
+  } else if (node -> key.op == OP_SUB) {
     node -> left = nullptr;
     free(left);
   } else {
-    node -> type = node -> right -> type;
-    node -> key = node -> right -> key;
-    node -> left = node -> right -> left;
-    node -> right = node -> right -> right;
-    left -> parent = nullptr;
-    right -> parent = nullptr;
-    right -> left = nullptr;
-    right -> right = nullptr;
-
-    free(left);
-    free(right);
+    Update(node, right, left);
   }
+  TexSimplifyAfter(node);
 }
 
 bool IsConst(Node* node) {
@@ -492,6 +588,26 @@ bool IsZero(Node* node) {
 
 bool IsOne(Node* node) {
   if (node -> type == TYPE_CONST && node -> key.dbl == 1) {
+    return true;
+  }
+
+  return false;
+}
+
+bool IsVar(Node* node) {
+  if (node == nullptr) {
+    return false;
+  }
+
+  if(node -> type == TYPE_VAR) {
+    return true;
+  }
+
+  if (IsVar(node -> right)) {
+    return true;
+  }
+
+  if (IsVar(node -> left)) {
     return true;
   }
 
@@ -532,6 +648,7 @@ bool SimplifyMul(Node* node) {
   }
 
   if (IsZero(L) || IsZero(R)) {
+    TexSimplifyBefore(node);
     node -> type = TYPE_CONST;
     node -> key.dbl = 0;
     L -> parent = nullptr;
@@ -542,6 +659,7 @@ bool SimplifyMul(Node* node) {
     free(L);
     free(R);
 
+    TexSimplifyAfter(node);
     return true;
   }
 
@@ -563,6 +681,7 @@ bool SimplifyDeg(Node* node) {
   assert(node);
 
   if(IsZero(R)) {
+    TexSimplifyBefore(node);
     node -> type = TYPE_CONST;
     node -> key.dbl = 1;
     L -> parent = nullptr;
@@ -572,11 +691,13 @@ bool SimplifyDeg(Node* node) {
 
     free(L);
     free(R);
+    TexSimplifyAfter(node);
 
     return true;
   }
 
   if(IsOne(R)) {
+    TexSimplifyBefore(node);
     node -> type = L -> type;
     node -> key = L -> key;
     L -> parent = nullptr;
@@ -586,6 +707,7 @@ bool SimplifyDeg(Node* node) {
 
     free(L);
     free(R);
+    TexSimplifyAfter(node);
 
     return true;
   }
@@ -603,17 +725,28 @@ bool SimplifyNeutral(Node* node) {
 
   bool result = arg_1 || arg_2;
 
-  if (node -> type != TYPE_OP && node -> type != TYPE_STR) {
+  if (node -> type != TYPE_BIN_OP && node -> type != TYPE_UN_OP) {
     return result;
   }
 
-  switch(node -> key.symb) {
-    case '+': return (SimplifyAdd(node) || result);
-    case '-': return (SimplifySub(node) || result);
-    case '*': return (SimplifyMul(node) || result);
-    case '/': return (SimplifyDiv(node) || result);
-    case '^': return (SimplifyDeg(node) || result);
-    default:  return result;
+  switch(node -> key.op) {
+    case OP_ADD:
+      return (SimplifyAdd(node) || result);
+
+    case OP_SUB:
+      return (SimplifySub(node) || result);
+
+    case OP_MUL:
+      return (SimplifyMul(node) || result);
+
+    case OP_DIV:
+      return (SimplifyDiv(node) || result);
+
+    case OP_POW:
+      return (SimplifyDeg(node) || result);
+
+    default:
+      return result;
   }
 
 }
@@ -628,19 +761,29 @@ bool SimplifyConsts(Node* node) {
 
   bool result = arg_1 || arg_2;
 
-  if(node -> type == TYPE_OP && R -> type == TYPE_CONST && L -> type == TYPE_CONST) {
+  if(node -> type == TYPE_BIN_OP && R -> type == TYPE_CONST && L -> type == TYPE_CONST) {
+    TexSimplifyBefore(node);
     node -> type = TYPE_CONST;
-    switch(node -> key.symb) {
-      case '+': node -> key.dbl = L -> key.dbl + R -> key.dbl;
-                break;
-      case '-': node -> key.dbl = L -> key.dbl - R -> key.dbl;
-                break;
-      case '*': node -> key.dbl = L -> key.dbl * R -> key.dbl;
-                break;
-      case '/': node -> key.dbl = L -> key.dbl / R -> key.dbl;
-                break;
-      case '^': node -> key.dbl = pow(L -> key.dbl, R -> key.dbl);
-                break;
+    switch(node -> key.op) {
+      case OP_ADD:
+        node -> key.dbl = L -> key.dbl + R -> key.dbl;
+        break;
+
+      case OP_SUB:
+        node -> key.dbl = L -> key.dbl - R -> key.dbl;
+        break;
+
+      case OP_MUL:
+        node -> key.dbl = L -> key.dbl * R -> key.dbl;
+        break;
+
+      case OP_DIV:
+        node -> key.dbl = L -> key.dbl / R -> key.dbl;
+        break;
+
+      case OP_POW:
+        node -> key.dbl = pow(L -> key.dbl, R -> key.dbl);
+        break;
     }
     L -> parent = nullptr;
     R -> parent = nullptr;
@@ -649,6 +792,8 @@ bool SimplifyConsts(Node* node) {
 
     free(L);
     free(R);
+
+    TexSimplifyAfter(node);
 
     return true;
   }
@@ -662,6 +807,7 @@ bool SimplifyConsts(Node* node) {
 void Simplify(Tree* tree) {
   assert(tree);
 
+  TexSimplifyBegin(tree);
   bool is_changed = true;
 
   while(is_changed) {
@@ -671,6 +817,43 @@ void Simplify(Tree* tree) {
   }
 }
 
+void DestructNode(Node* node) {
+  assert(node);
+
+  if (node -> left != nullptr) {
+    DestructNode(node -> left);
+  } else if (node -> right != nullptr) {
+    DestructNode(node -> right);
+  } else {
+    free(node);
+  }
+}
+
+void UpdateTree(Tree* tree) {
+  assert(tree);
+
+  if (tree -> root != nullptr) {
+    DestructNode(tree -> root);
+  }
+
+  tree -> root = nullptr;
+}
+
+void Diverative(Tree* tree) {
+  assert(tree);
+
+  BeginReport(tree);
+
+  Node* new_root = Diff(tree -> root);
+
+  UpdateTree(tree);
+  tree -> root = new_root;
+
+  Simplify(tree);
+
+  EndReport(tree);
+}
+
 int main() {
   String string = {};
   string.str = (char*)calloc(100, sizeof(char));
@@ -678,10 +861,7 @@ int main() {
   scanf("%s", string.str);
   Tree tree = {};
   TreeConstruct(&tree, &string);
-  DumpPrintTree(&tree);
-  Node* new_root = Diff(tree.root);
-  tree.root = new_root;
-  Simplify(&tree);
+  Diverative(&tree);
   DumpPrintTree(&tree);
   PrintTex(&tree);
   return 0;
